@@ -1,0 +1,27 @@
+{
+  "name": "pathviz",
+  "version": "0.1.0",
+  "description": "Path Visualization",
+  "scripts": {
+    "start": "webpack serve --config webpack.config.js",
+    "lint": "eslint src/ --fix"
+  },
+  "author": "Stoyan Grozdanov <stoyan.konstantinov.grozdanov@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^17.0.39",
+    "@types/react-dom": "^17.0.13",
+    "@typescript-eslint/eslint-plugin": "^5.13.0",
+    "eslint": "^8.10.0",
+    "eslint-plugin-react": "^7.29.2",
+    "ts-loader": "^9.2.7",
+    "typescript": "^4.6.2",
+    "webpack": "^5.69.1",
+    "webpack-cli": "^4.9.2",
+    "webpack-dev-server": "^4.7.4"
+  }
+}
