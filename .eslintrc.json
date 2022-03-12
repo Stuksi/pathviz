@@ -18,7 +18,7 @@
     "linebreak-style": ["error", "unix"],
     "quotes": ["error", "single"],
     "comma-dangle": ["error", "only-multiline"],
-    "semi": "error",
+    "semi": ["error", "never"],
     "eol-last": "error",
     "no-console": "warn",
     "react/jsx-uses-react": "error"
