@@ -10,7 +10,9 @@ import EraserCursor       from './assets/eraser-cursor.png'
 
 // ==== Constants ==== //
 
-const TILE_SIZE = 50
+const TILE_SIZE = 10
+
+const SPEED = 10
 
 const SELECTED_TOOL_COLOR = '#fdfeff'
 const DEFAULT_TILE_COLOR  = '#f8f9fc'
@@ -70,6 +72,17 @@ function tileStateColorMap(state: number) {
     return SEARCH_TILE_COLOR
   default:
     return DEFAULT_TILE_COLOR
+  }
+}
+
+function algorithmNameStateMap(name: string) {
+  switch (name) {
+  case 'Depth First Search':
+    return DEPTH_FIRST_SEARCH_ALGORITHM_STATE
+  case 'Breath FIrst Search':
+    return BREATH_FIRST_SEARCH_ALGORITHM_STATE
+  default:
+    return undefined
   }
 }
 
@@ -264,11 +277,56 @@ function Tile(props: TileProps) {
 }
 
 function Controls() {
+  const { tilesState, tilesStateSetters } = useContext(AppContext)
+  const [algorithm, setAlgorithm] = useState(DEPTH_FIRST_SEARCH_ALGORITHM_STATE)
+
+  const handleClick = async () => {
+    let endTile
+
+    for (let x = 0; x < tilesState.length; x++) {
+      for (let y = 0; y < tilesState[x].length; y++) {
+        if (tilesState[x][y] === END_TILE_STATE) {
+          endTile = { coordinates: { x, y }}
+        }
+      }
+    }
+
+    let startTile
+
+    for (let x = 0; x < tilesState.length; x++) {
+      for (let y = 0; y < tilesState[x].length; y++) {
+        if (tilesState[x][y] === START_TILE_STATE) {
+          startTile = { coordinates: { x, y }}
+        }
+      }
+    }
+
+    const used = []
+    for (let x = 0; x < tilesState.length; x++) {
+      used.push([])
+      for (let y = 0; y < tilesState[x].length; y++) {
+        used[x].push(false)
+      }
+    }
+
+    switch (algorithm) {
+    case DEPTH_FIRST_SEARCH_ALGORITHM_STATE:
+      return DepthFirstSearch(startTile, endTile, tilesState, tilesStateSetters, used)
+    case BREATH_FIRST_SEARCH_ALGORITHM_STATE:
+      return BreathFirstSearch(startTile, endTile, tilesState, tilesStateSetters, used)
+    default:
+      return undefined
+    }
+  }
+
   return (
     <div className='controls'>
       <div className='simulation-control'>
-        <button>Run Simulation</button>
-        <select className='algorithms-dropdown'>
+        <button onClick={handleClick}>Run Simulation</button>
+        <select
+          className='algorithms-dropdown'
+          onChange={event => setAlgorithm(algorithmNameStateMap(event.target.value))}
+        >
           {
             ALGORITHMS.map((algorithm, index) => (
               <option key={index}>{algorithm}</option>
@@ -307,3 +365,189 @@ function ToolIcon({ src, tool: toolState }: ToolIconProps) {
 ReactDOM.render(<App />, document.getElementById('root'))
 
 // ==== ALgorithms ==== //
+
+async function DepthFirstSearch(startTile: TileProps, endTile: TileProps, tileStates: TilesState, tilesStateSetters: TilesStateSetters, used: boolean[][]) {
+  if (startTile.coordinates.x < 0 ||
+      startTile.coordinates.x >= tileStates.length ||
+      startTile.coordinates.y < 0 ||
+      startTile.coordinates.y >= tileStates[0].length ||
+      used[startTile.coordinates.x][startTile.coordinates.y]) {
+    return false
+  }
+
+  if (tileStates[startTile.coordinates.x][startTile.coordinates.y] === WALL_TILE_STATE) {
+    return false
+  }
+
+  if (startTile.coordinates.x === endTile.coordinates.x && startTile.coordinates.y === endTile.coordinates.y) {
+    return true
+  }
+
+
+  const newUsed = used
+  newUsed[startTile.coordinates.x][startTile.coordinates.y] = true
+  tilesStateSetters[startTile.coordinates.x][startTile.coordinates.y](SEARCH_TILE_STATE)
+
+  await new Promise(resolve => setTimeout(resolve, 1))
+
+  if (await DepthFirstSearch(
+    {
+      coordinates: {
+        x: startTile.coordinates.x - 1,
+        y: startTile.coordinates.y,
+      }
+    },
+    endTile,
+    tileStates,
+    tilesStateSetters,
+    newUsed
+  )) {
+    return true
+  }
+
+  if (await DepthFirstSearch(
+    {
+      coordinates: {
+        x: startTile.coordinates.x + 1,
+        y: startTile.coordinates.y,
+      }
+    },
+    endTile,
+    tileStates,
+    tilesStateSetters,
+    newUsed
+  )) {
+    return true
+  }
+
+  if (await DepthFirstSearch(
+    {
+      coordinates: {
+        x: startTile.coordinates.x,
+        y: startTile.coordinates.y - 1,
+      }
+    },
+    endTile,
+    tileStates,
+    tilesStateSetters,
+    newUsed
+  )) {
+    return true
+  }
+
+  if (await DepthFirstSearch(
+    {
+      coordinates: {
+        x: startTile.coordinates.x,
+        y: startTile.coordinates.y + 1,
+      }
+    },
+    endTile,
+    tileStates,
+    tilesStateSetters,
+    newUsed
+  )) {
+    return true
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 1))
+
+  tilesStateSetters[startTile.coordinates.x][startTile.coordinates.y](DEFAULT_TILE_STATE)
+  return false
+}
+
+async function BreathFirstSearch(startTile: TileProps, endTile: TileProps, tileStates: TilesState, tilesStateSetters: TilesStateSetters, used: boolean[][]) {
+  const queue = [startTile]
+
+  while (queue.length > 0) {
+    const front = queue.shift()
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    if (front.coordinates.x - 1 >= 0) {
+      const tile = {
+        coordinates: {
+          x: front.coordinates.x - 1,
+          y: front.coordinates.y,
+        }
+      }
+
+      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
+        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+          return true
+        }
+
+        used[tile.coordinates.x][tile.coordinates.y] = true
+
+        queue.push(tile)
+
+        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+      }
+    }
+
+    if (front.coordinates.x + 1 < tileStates.length) {
+      const tile = {
+        coordinates: {
+          x: front.coordinates.x + 1,
+          y: front.coordinates.y,
+        }
+      }
+
+      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
+        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+          return true
+        }
+
+        used[tile.coordinates.x][tile.coordinates.y] = true
+
+        queue.push(tile)
+
+        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+      }
+    }
+
+    if (front.coordinates.y - 1 >= 0) {
+      const tile = {
+        coordinates: {
+          x: front.coordinates.x,
+          y: front.coordinates.y - 1,
+        }
+      }
+
+      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
+        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+          return true
+        }
+
+        used[tile.coordinates.x][tile.coordinates.y] = true
+
+        queue.push(tile)
+
+        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+      }
+    }
+
+    if (front.coordinates.y + 1 < tileStates[0].length) {
+      const tile = {
+        coordinates: {
+          x: front.coordinates.x,
+          y: front.coordinates.y + 1,
+        }
+      }
+
+      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
+        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+          return true
+        }
+
+        used[tile.coordinates.x][tile.coordinates.y] = true
+
+        queue.push(tile)
+
+        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+      }
+    }
+  }
+
+  return false
+}
