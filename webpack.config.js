@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 
-const path = require('path');
+const path = require('path')
 
 module.exports = {
   mode: 'development',
@@ -23,6 +23,10 @@ module.exports = {
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
       },
+      {
+        test: /\.(png|jpe?g)$/,
+        use: ['file-loader'],
+      }
     ],
   },
-};
+}
