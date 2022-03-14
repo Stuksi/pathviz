@@ -548,22 +548,34 @@ async function BreathFirstSearch(
 
   if (startTilePosition.x - 1 >= 0) {
     const leftTilePosition = {x: startTilePosition.x - 1, y: startTilePosition.y}
+
+    usedTiles[leftTilePosition.x][leftTilePosition.y] = true
     pathsQueue.push([leftTilePosition])
+    tilesStateSetters[leftTilePosition.x][leftTilePosition.y](SEARCH_TILE_STATE)
   }
 
   if (startTilePosition.y + 1 < tileStates[0].length) {
     const bottomTilePosition = {x: startTilePosition.x, y: startTilePosition.y + 1}
+
+    usedTiles[bottomTilePosition.x][bottomTilePosition.y] = true
     pathsQueue.push([bottomTilePosition])
+    tilesStateSetters[bottomTilePosition.x][bottomTilePosition.y](SEARCH_TILE_STATE)
   }
 
   if (startTilePosition.x + 1 < tileStates.length) {
     const rightTilePosition = {x: startTilePosition.x + 1, y: startTilePosition.y}
+
+    usedTiles[rightTilePosition.x][rightTilePosition.y] = true
     pathsQueue.push([rightTilePosition])
+    tilesStateSetters[rightTilePosition.x][rightTilePosition.y](SEARCH_TILE_STATE)
   }
 
   if (startTilePosition.y - 1 >= 0) {
     const topTilePosition = {x: startTilePosition.x, y: startTilePosition.y - 1}
+
+    usedTiles[topTilePosition.x][topTilePosition.y] = true
     pathsQueue.push([topTilePosition])
+    tilesStateSetters[topTilePosition.x][topTilePosition.y](SEARCH_TILE_STATE)
   }
 
   while (pathsQueue.length > 0) {
