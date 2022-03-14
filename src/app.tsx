@@ -12,7 +12,10 @@ import EraserCursor       from './assets/eraser-cursor.png'
 
 // ==== Constants ==== //
 
-const DEFAULT_TILE_SIZE = 200
+const DEFAULT_TILE_SIZE = 100
+const MIN_TILE_SIZE = 20
+const MAX_TILE_SIZE = 200
+const TILE_SIZE_STEP = 10
 
 const SELECTED_TOOL_COLOR = '#fdfeff'
 const DEFAULT_TILE_COLOR  = '#f8f9fc'
@@ -20,12 +23,14 @@ const START_TILE_COLOR    = '#5aad57'
 const END_TILE_COLOR      = '#e00404'
 const WALL_TILE_COLOR     = '#38030f'
 const SEARCH_TILE_COLOR   = '#0c04bc'
+const PATH_TILE_COLOR     = '#ffdf00'
 
 const DEFAULT_TILE_STATE = 0
 const START_TILE_STATE   = 1
 const END_TILE_STATE     = 2
 const WALL_TILE_STATE    = 3
 const SEARCH_TILE_STATE  = 4
+const PATH_TILE_STATE    = 5
 
 const POINTER_TOOL_STATE    = 0
 const WALL_BRUSH_TOOL_STATE = 1
@@ -54,6 +59,8 @@ const DEFAULT_APP_CONTEXT = {
   setTilesStateSetters: () => undefined,
 }
 
+const RESIZE_DEBOUCE = 50
+
 // ==== Mappers ==== //
 
 function toolCursorMap(tool: number) {
@@ -81,6 +88,8 @@ function tileStateColorMap(state: number) {
     return WALL_TILE_COLOR
   case SEARCH_TILE_STATE:
     return SEARCH_TILE_COLOR
+  case PATH_TILE_STATE:
+    return PATH_TILE_COLOR
   default:
     return DEFAULT_TILE_COLOR
   }
@@ -192,17 +201,18 @@ function Grid() {
       setTilesState(createMatrix(horizontalTilesCount, verticalTilesCount))
       setTilesStateSetters(createMatrix(horizontalTilesCount, verticalTilesCount))
       setGrid(createMatrix(horizontalTilesCount, verticalTilesCount, (x, y) => (
-        <Tile key={x + y} position={{x, y}} size={tileSize}/>
+        <Tile key={_.uniqueId()} position={{x, y}} size={tileSize}/>
       )))
-    }, 50)
+    }, RESIZE_DEBOUCE)
 
     resize()
+
     window.addEventListener('resize', resize)
 
     return () => {
       window.removeEventListener('resize', resize)
     }
-  }, [])
+  }, [tileSize])
 
   useEffect(() => {
     setCursor(toolCursorMap(tool))
@@ -313,7 +323,14 @@ function Controls() {
   const { tilesState, tilesStateSetters } = useContext(AppContext)
   const [algorithm, setAlgorithm] = useState(DEPTH_FIRST_SEARCH_ALGORITHM_STATE)
 
-  const handleClick = async () => {
+  const {
+    tileSize,
+    setTileSize,
+  } = useContext(AppContext)
+
+  const simulate = async () => {
+    reset()
+
     const startTilePosition = findTilePosition(tilesState, START_TILE_STATE)
     const endTilePosition   = findTilePosition(tilesState, END_TILE_STATE)
 
@@ -329,21 +346,44 @@ function Controls() {
     }
   }
 
-  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+  const reset = () => {
+    tilesStateSetters.forEach((tilesStateSetterContainers, x) => {
+      tilesStateSetterContainers.forEach((tilesStateSetter, y) => {
+        if (tilesState[x][y] !== START_TILE_STATE && tilesState[x][y] !== END_TILE_STATE) {
+          tilesStateSetter(DEFAULT_TILE_STATE)
+        }
+      })
+    })
+  }
+
+  const handleAlgorithmChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setAlgorithm(algorithmNameStateMap(event.target.value))
+  }
+
+  const handleSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setTileSize(parseInt(event.target.value))
   }
 
   return (
     <div className='controls'>
       <div className='simulation-control'>
-        <button onClick={handleClick}>Run Simulation</button>
-        <select className='algorithms-dropdown' onChange={handleChange}>
+        <button onClick={simulate}>Run Simulation</button>
+        <select className='algorithms-dropdown' onChange={handleAlgorithmChange}>
           {
             ALGORITHMS.map((algorithm, index) => (
               <option key={index}>{algorithm}</option>
             ))
           }
         </select>
+        <button onClick={reset}>Reset</button>
+        <input
+          type='range'
+          min={MIN_TILE_SIZE}
+          max={MAX_TILE_SIZE}
+          step={TILE_SIZE_STEP}
+          defaultValue={tileSize}
+          onChange={handleSizeChange}
+        />
       </div>
       <div className='tools'>
         <ToolIcon src={DefaultPointerIcon} tool={POINTER_TOOL_STATE} />
@@ -375,7 +415,7 @@ function ToolIcon({ src, tool: toolState }: ToolIconProps) {
 
 ReactDOM.render(<App />, document.getElementById('root'))
 
-// ==== ALgorithms ==== //
+// ==== Algorithms ==== //
 
 async function DepthFirstSearch(
   startTilePosition: Position,
@@ -408,10 +448,10 @@ async function RecursiveDepthFirstSearch(
   usedTiles: boolean[][],
 ) {
   if (
-    startTilePosition.x < 0 ||
-    startTilePosition.x >= tileStates.length ||
-    startTilePosition.y < 0 ||
-    startTilePosition.y >= tileStates[0].length ||
+    startTilePosition.x < 0                             ||
+    startTilePosition.x >= tileStates.length            ||
+    startTilePosition.y < 0                             ||
+    startTilePosition.y >= tileStates[0].length         ||
     usedTiles[startTilePosition.x][startTilePosition.y] ||
     tileStates[startTilePosition.x][startTilePosition.y] === WALL_TILE_STATE
   ) {
@@ -430,18 +470,27 @@ async function RecursiveDepthFirstSearch(
   const rightTilePosition  = {x: startTilePosition.x + 1, y: startTilePosition.y}
   const topTilePosition    = {x: startTilePosition.x,     y: startTilePosition.y - 1}
 
-  const leftSearch   = RecursiveDepthFirstSearch(leftTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
-  const bottomSearch = RecursiveDepthFirstSearch(bottomTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
-  const rightSearch  = RecursiveDepthFirstSearch(rightTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
-  const topSearch    = RecursiveDepthFirstSearch(topTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  const leftSearch = await RecursiveDepthFirstSearch(leftTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  if (await leftSearch) {
+    tilesStateSetters[startTilePosition.x][startTilePosition.y](PATH_TILE_STATE)
+    return true
+  }
 
-  if (
-    await leftSearch   ||
-    await bottomSearch ||
-    await rightSearch  ||
-    await topSearch
-  ) {
-    tilesStateSetters[startTilePosition.x][startTilePosition.y](START_TILE_STATE)
+  const bottomSearch = await RecursiveDepthFirstSearch(bottomTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  if (bottomSearch) {
+    tilesStateSetters[startTilePosition.x][startTilePosition.y](PATH_TILE_STATE)
+    return true
+  }
+
+  const rightSearch = await RecursiveDepthFirstSearch(rightTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  if (rightSearch) {
+    tilesStateSetters[startTilePosition.x][startTilePosition.y](PATH_TILE_STATE)
+    return true
+  }
+
+  const topSearch = await RecursiveDepthFirstSearch(topTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  if (topSearch) {
+    tilesStateSetters[startTilePosition.x][startTilePosition.y](PATH_TILE_STATE)
     return true
   }
 
@@ -558,3 +607,7 @@ function findTilePosition(tilesState: TilesState, tileStateType: number): Positi
     }
   }
 }
+
+// function sleep(milliseconds: number) {
+//   return new Promise(resolve => setTimeout(resolve, milliseconds))
+// }

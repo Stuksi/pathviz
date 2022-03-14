@@ -17,7 +17,6 @@
 
 .grid-wrapper {
   flex: 0.8;
-  position: relative;
 }
 
 .grid {
@@ -49,7 +48,7 @@
   background-color: #f8f9fc;
 }
 
-/* ==== Simulation Control */
+/* ==== Simulation Control ==== */
 
 .simulation-control {
   display: flex;
