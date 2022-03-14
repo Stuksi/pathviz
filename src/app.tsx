@@ -59,7 +59,12 @@ const DEFAULT_APP_CONTEXT = {
   setTilesStateSetters: () => undefined,
 }
 
-const RESIZE_DEBOUCE = 50
+const DEFAULT_PATH_FINDING_WAIT_TIME = 100
+const MIN_PATH_FINDING_WAIT_TIME      = 4
+const MAX_PATH_FINDING_WAIT_TIME      = 250
+const PATH_FINDING_WAIT_TIME_STEP     = 15
+
+const RESIZE_DEBOUCE             = 50
 
 // ==== Mappers ==== //
 
@@ -111,6 +116,12 @@ function algorithmNameStateMap(name: string) {
 }
 
 // ==== Interfaces / Types ==== //
+
+declare global {
+  interface Window {
+    PATH_FINDING_WAIT_TIME: number
+  }
+}
 
 type TilesState = number[][]
 type TilesStateSetters = React.Dispatch<React.SetStateAction<number>>[][]
@@ -320,12 +331,14 @@ function Tile(props: TileProps) {
 }
 
 function Controls() {
-  const { tilesState, tilesStateSetters } = useContext(AppContext)
-  const [algorithm, setAlgorithm] = useState(DEPTH_FIRST_SEARCH_ALGORITHM_STATE)
+  const [algorithm,                       setAlgorithm] = useState(DEPTH_FIRST_SEARCH_ALGORITHM_STATE)
+  const [pathFindingWaitTime,   setPathFindingWaitTime] = useState(DEFAULT_PATH_FINDING_WAIT_TIME)
 
   const {
     tileSize,
     setTileSize,
+    tilesState,
+    tilesStateSetters,
   } = useContext(AppContext)
 
   const simulate = async () => {
@@ -349,7 +362,11 @@ function Controls() {
   const reset = () => {
     tilesStateSetters.forEach((tilesStateSetterContainers, x) => {
       tilesStateSetterContainers.forEach((tilesStateSetter, y) => {
-        if (tilesState[x][y] !== START_TILE_STATE && tilesState[x][y] !== END_TILE_STATE) {
+        if (
+          tilesState[x][y] !== START_TILE_STATE &&
+          tilesState[x][y] !== END_TILE_STATE   &&
+          tilesState[x][y] !== WALL_TILE_STATE
+        ) {
           tilesStateSetter(DEFAULT_TILE_STATE)
         }
       })
@@ -362,6 +379,13 @@ function Controls() {
 
   const handleSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setTileSize(parseInt(event.target.value))
+  }
+
+  const handleWaitTimeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const pathFindingWaitTime = parseInt(event.target.value)
+
+    setPathFindingWaitTime(pathFindingWaitTime)
+    window.PATH_FINDING_WAIT_TIME = pathFindingWaitTime
   }
 
   return (
@@ -381,8 +405,16 @@ function Controls() {
           min={MIN_TILE_SIZE}
           max={MAX_TILE_SIZE}
           step={TILE_SIZE_STEP}
-          defaultValue={tileSize}
+          value={tileSize}
           onChange={handleSizeChange}
+        />
+        <input
+          type='range'
+          min={MIN_PATH_FINDING_WAIT_TIME}
+          max={MAX_PATH_FINDING_WAIT_TIME}
+          step={PATH_FINDING_WAIT_TIME_STEP}
+          value={pathFindingWaitTime}
+          onChange={handleWaitTimeChange}
         />
       </div>
       <div className='tools'>
@@ -409,6 +441,7 @@ function ToolIcon({ src, tool: toolState }: ToolIconProps) {
       src={src}
       onClick={handleClick}
       style={{ backgroundColor }}
+      draggable={false}
     />
   )
 }
@@ -421,7 +454,7 @@ async function DepthFirstSearch(
   startTilePosition: Position,
   endTilePosition: Position,
   tileStates: TilesState,
-  tilesStateSetters: TilesStateSetters
+  tilesStateSetters: TilesStateSetters,
 ) {
   const usedTiles = createMatrix(tileStates.length, tileStates[0].length, () => false)
 
@@ -465,6 +498,8 @@ async function RecursiveDepthFirstSearch(
   usedTiles[startTilePosition.x][startTilePosition.y] = true
   tilesStateSetters[startTilePosition.x][startTilePosition.y](SEARCH_TILE_STATE)
 
+  await wait(window.PATH_FINDING_WAIT_TIME)
+
   const leftTilePosition   = {x: startTilePosition.x - 1, y: startTilePosition.y}
   const bottomTilePosition = {x: startTilePosition.x,     y: startTilePosition.y + 1}
   const rightTilePosition  = {x: startTilePosition.x + 1, y: startTilePosition.y}
@@ -495,34 +530,63 @@ async function RecursiveDepthFirstSearch(
   }
 
   tilesStateSetters[startTilePosition.x][startTilePosition.y](DEFAULT_TILE_STATE)
+  await wait(window.PATH_FINDING_WAIT_TIME)
+
   return false
 }
 
-async function BreathFirstSearch(startTilePosition: Position, endTilePosition: Position, tileStates: TilesState, tilesStateSetters: TilesStateSetters) {
-  const queue = [[startTilePosition]]
+async function BreathFirstSearch(
+  startTilePosition: Position,
+  endTilePosition: Position,
+  tileStates: TilesState,
+  tilesStateSetters: TilesStateSetters,
+) {
+  const pathsQueue: Position[][] = []
   const usedTiles = createMatrix(tileStates.length, tileStates[0].length, () => false)
 
-  while (queue.length > 0) {
-    const path = queue.shift()
+  usedTiles[startTilePosition.x][startTilePosition.y] = true
+
+  if (startTilePosition.x - 1 >= 0) {
+    const leftTilePosition = {x: startTilePosition.x - 1, y: startTilePosition.y}
+    pathsQueue.push([leftTilePosition])
+  }
+
+  if (startTilePosition.y + 1 < tileStates[0].length) {
+    const bottomTilePosition = {x: startTilePosition.x, y: startTilePosition.y + 1}
+    pathsQueue.push([bottomTilePosition])
+  }
+
+  if (startTilePosition.x + 1 < tileStates.length) {
+    const rightTilePosition = {x: startTilePosition.x + 1, y: startTilePosition.y}
+    pathsQueue.push([rightTilePosition])
+  }
+
+  if (startTilePosition.y - 1 >= 0) {
+    const topTilePosition = {x: startTilePosition.x, y: startTilePosition.y - 1}
+    pathsQueue.push([topTilePosition])
+  }
+
+  while (pathsQueue.length > 0) {
+    const path = pathsQueue.shift()
     const lastTilePosition = _.last(path)
-
-    if (lastTilePosition.x === endTilePosition.x && lastTilePosition.y === endTilePosition.y) {
-      _.reverse(path).forEach(tilePosition => {
-        tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
-      })
-
-      return true
-    }
 
     if (lastTilePosition.x - 1 >= 0) {
       const leftTilePosition = {x: lastTilePosition.x - 1, y: lastTilePosition.y}
+
+      if (leftTilePosition.x === endTilePosition.x && leftTilePosition.y === endTilePosition.y) {
+        _.reverse(path).forEach(tilePosition => {
+          tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+        })
+
+        return true
+      }
 
       if (
         !usedTiles[leftTilePosition.x][leftTilePosition.y] &&
         tileStates[leftTilePosition.x][leftTilePosition.y] !== WALL_TILE_STATE
       ) {
         usedTiles[leftTilePosition.x][leftTilePosition.y] = true
-        queue.push(path.concat([leftTilePosition]))
+        pathsQueue.push(path.concat([leftTilePosition]))
         tilesStateSetters[leftTilePosition.x][leftTilePosition.y](SEARCH_TILE_STATE)
       }
     }
@@ -530,12 +594,20 @@ async function BreathFirstSearch(startTilePosition: Position, endTilePosition: P
     if (lastTilePosition.y + 1 < tileStates[0].length) {
       const bottomTilePosition = {x: lastTilePosition.x, y: lastTilePosition.y + 1}
 
+      if (bottomTilePosition.x === endTilePosition.x && bottomTilePosition.y === endTilePosition.y) {
+        _.reverse(path).forEach(tilePosition => {
+          tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+        })
+
+        return true
+      }
+
       if (
         !usedTiles[bottomTilePosition.x][bottomTilePosition.y] &&
         tileStates[bottomTilePosition.x][bottomTilePosition.y] !== WALL_TILE_STATE
       ) {
         usedTiles[bottomTilePosition.x][bottomTilePosition.y] = true
-        queue.push(path.concat([bottomTilePosition]))
+        pathsQueue.push(path.concat([bottomTilePosition]))
         tilesStateSetters[bottomTilePosition.x][bottomTilePosition.y](SEARCH_TILE_STATE)
       }
     }
@@ -543,12 +615,20 @@ async function BreathFirstSearch(startTilePosition: Position, endTilePosition: P
     if (lastTilePosition.x + 1 < tileStates.length) {
       const rightTilePosition = {x: lastTilePosition.x + 1, y: lastTilePosition.y}
 
+      if (rightTilePosition.x === endTilePosition.x && rightTilePosition.y === endTilePosition.y) {
+        _.reverse(path).forEach(tilePosition => {
+          tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+        })
+
+        return true
+      }
+
       if (
         !usedTiles[rightTilePosition.x][rightTilePosition.y] &&
         tileStates[rightTilePosition.x][rightTilePosition.y] !== WALL_TILE_STATE
       ) {
         usedTiles[rightTilePosition.x][rightTilePosition.y] = true
-        queue.push(path.concat([rightTilePosition]))
+        pathsQueue.push(path.concat([rightTilePosition]))
         tilesStateSetters[rightTilePosition.x][rightTilePosition.y](SEARCH_TILE_STATE)
       }
     }
@@ -556,15 +636,25 @@ async function BreathFirstSearch(startTilePosition: Position, endTilePosition: P
     if (lastTilePosition.y - 1 >= 0) {
       const topTilePosition = {x: lastTilePosition.x, y: lastTilePosition.y - 1}
 
+      if (topTilePosition.x === endTilePosition.x && topTilePosition.y === endTilePosition.y) {
+        _.reverse(path).forEach(tilePosition => {
+          tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+        })
+
+        return true
+      }
+
       if (
         !usedTiles[topTilePosition.x][topTilePosition.y] &&
         tileStates[topTilePosition.x][topTilePosition.y] !== WALL_TILE_STATE
       ) {
         usedTiles[topTilePosition.x][topTilePosition.y] = true
-        queue.push(path.concat([topTilePosition]))
+        pathsQueue.push(path.concat([topTilePosition]))
         tilesStateSetters[topTilePosition.x][topTilePosition.y](SEARCH_TILE_STATE)
       }
     }
+
+    await wait(window.PATH_FINDING_WAIT_TIME)
   }
 
   return false
@@ -591,6 +681,7 @@ function findTilePosition(tilesState: TilesState, tileStateType: number): Positi
   }
 }
 
-// function sleep(milliseconds: number) {
-//   return new Promise(resolve => setTimeout(resolve, milliseconds))
-// }
+function wait(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
