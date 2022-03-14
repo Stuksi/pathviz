@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom'
 import './app.css'
 
+import _ from 'lodash'
+
 import DefaultPointerIcon from './assets/default-pointer-icon.png'
 import EraserPointerIcon  from './assets/eraser-pointer-icon.png'
 import WallIcon           from './assets/wall-icon.png'
@@ -10,9 +12,7 @@ import EraserCursor       from './assets/eraser-cursor.png'
 
 // ==== Constants ==== //
 
-const TILE_SIZE = 10
-
-const SPEED = 10
+const DEFAULT_TILE_SIZE = 200
 
 const SELECTED_TOOL_COLOR = '#fdfeff'
 const DEFAULT_TILE_COLOR  = '#f8f9fc'
@@ -38,10 +38,21 @@ const DIJKSTRA_SEARCH_ALGORITHM_STATE     = 3
 
 const ALGORITHMS = [
   'Depth First Search',
-  'Breath FIrst Search',
+  'Breath First Search',
   'A*',
   'Dijkstra',
 ]
+
+const DEFAULT_APP_CONTEXT = {
+  tool: undefined,
+  setTool: () => undefined,
+  tileSize: undefined,
+  setTileSize: () => undefined,
+  tilesState: undefined,
+  setTilesState: () => undefined,
+  tilesStateSetters: undefined,
+  setTilesStateSetters: () => undefined,
+}
 
 // ==== Mappers ==== //
 
@@ -79,8 +90,12 @@ function algorithmNameStateMap(name: string) {
   switch (name) {
   case 'Depth First Search':
     return DEPTH_FIRST_SEARCH_ALGORITHM_STATE
-  case 'Breath FIrst Search':
+  case 'Breath First Search':
     return BREATH_FIRST_SEARCH_ALGORITHM_STATE
+  case 'A*':
+    return A_STAR_SEARCH_ALGORITHM_STATE
+  case 'Dijkstra':
+    return DIJKSTRA_SEARCH_ALGORITHM_STATE
   default:
     return undefined
   }
@@ -91,11 +106,14 @@ function algorithmNameStateMap(name: string) {
 type TilesState = number[][]
 type TilesStateSetters = React.Dispatch<React.SetStateAction<number>>[][]
 
+interface Position {
+  x: number
+  y: number
+}
+
 interface TileProps {
-  coordinates: {
-    x: number
-    y: number
-  }
+  position: Position
+  size: number
 }
 
 interface ToolIconProps {
@@ -106,6 +124,8 @@ interface ToolIconProps {
 interface AppContextProps {
   tool: number
   setTool: React.Dispatch<React.SetStateAction<number>>
+  tileSize: number
+  setTileSize: React.Dispatch<React.SetStateAction<number>>
   tilesState: TilesState
   setTilesState: React.Dispatch<React.SetStateAction<TilesState>>
   tilesStateSetters: TilesStateSetters
@@ -114,24 +134,21 @@ interface AppContextProps {
 
 // ==== Contexts ==== //
 
-const AppContext = createContext<AppContextProps>({
-  tool: undefined,
-  setTool: () => undefined,
-  tilesState: undefined,
-  setTilesState: () => undefined,
-  tilesStateSetters: undefined,
-  setTilesStateSetters: () => undefined,
-})
+const AppContext = createContext<AppContextProps>(DEFAULT_APP_CONTEXT)
 
 // ==== Components ==== //
 
 function App() {
-  const [tool, setTool] = useState(POINTER_TOOL_STATE)
-  const [tilesState, setTilesState] = useState([])
+  const [tool,                           setTool] = useState(POINTER_TOOL_STATE)
+  const [tileSize,                   setTileSize] = useState(DEFAULT_TILE_SIZE)
+  const [tilesState,               setTilesState] = useState([])
   const [tilesStateSetters, setTilesStateSetters] = useState([])
+
   const contextValue = {
     tool,
     setTool,
+    tileSize,
+    setTileSize,
     tilesState,
     setTilesState,
     tilesStateSetters,
@@ -149,23 +166,42 @@ function App() {
 }
 
 function Grid() {
-  const [dimensions, setDimensions] = useState({width: 0, height: 0})
-  const [padding,       setPadding] = useState('')
-  const [cursor,         setCursor] = useState('')
-  const { tool, setTilesStateSetters, setTilesState } = useContext(AppContext)
+  const [grid,       setGrid] = useState([])
+  const [padding, setPadding] = useState('')
+  const [cursor,   setCursor] = useState('default')
+
+  const {
+    tool,
+    tileSize,
+    setTilesState,
+    setTilesStateSetters,
+  } = useContext(AppContext)
 
   useEffect(() => {
     const element = document.querySelector('div.grid')
-    const width   = element.clientWidth  - (element.clientWidth  % TILE_SIZE)
-    const height  = element.clientHeight - (element.clientHeight % TILE_SIZE)
-    const horizontalPadding = (element.clientWidth  - width)  / 2  + 'px'
-    const verticalPadding   = (element.clientHeight - height) / 2  + 'px'
 
-    setDimensions({width, height})
-    setPadding(verticalPadding + ' ' + horizontalPadding)
-    setCursor('default')
-    setTilesStateSetters(new Array(width / TILE_SIZE).fill([]).map(() => new Array(height / TILE_SIZE).fill([])))
-    setTilesState(new Array(width / TILE_SIZE).fill([]).map(() => new Array(height / TILE_SIZE).fill([])))
+    const resize = _.debounce(() => {
+      const width   = element.clientWidth  - (element.clientWidth  % tileSize)
+      const height  = element.clientHeight - (element.clientHeight % tileSize)
+      const horizontalPadding = (element.clientWidth  - width)  / 2  + 'px'
+      const verticalPadding   = (element.clientHeight - height) / 2  + 'px'
+      const horizontalTilesCount = width  / tileSize
+      const verticalTilesCount   = height / tileSize
+
+      setPadding(verticalPadding + ' ' + horizontalPadding)
+      setTilesState(createMatrix(horizontalTilesCount, verticalTilesCount))
+      setTilesStateSetters(createMatrix(horizontalTilesCount, verticalTilesCount))
+      setGrid(createMatrix(horizontalTilesCount, verticalTilesCount, (x, y) => (
+        <Tile key={x + y} position={{x, y}} size={tileSize}/>
+      )))
+    }, 50)
+
+    resize()
+    window.addEventListener('resize', resize)
+
+    return () => {
+      window.removeEventListener('resize', resize)
+    }
   }, [])
 
   useEffect(() => {
@@ -175,13 +211,7 @@ function Grid() {
   return (
     <div className='grid-wrapper' style={{ padding, cursor }}>
       <div className='grid'>
-        {
-          new Array(dimensions.width / TILE_SIZE).fill(0).map((_, x) => (
-            new Array(dimensions.height / TILE_SIZE).fill(0).map((_, y) => (
-              <Tile key={x + y} coordinates={{x, y}}/>
-            ))
-          ))
-        }
+        { grid }
       </div>
     </div>
   )
@@ -189,26 +219,33 @@ function Grid() {
 
 function Tile(props: TileProps) {
   const [state, setState] = useState(DEFAULT_TILE_STATE)
-  const { tool, tilesState, setTilesState, tilesStateSetters, setTilesStateSetters } = useContext(AppContext)
+
+  const {
+    tool,
+    tilesState,
+    setTilesState,
+    tilesStateSetters,
+    setTilesStateSetters,
+  } = useContext(AppContext)
 
   const style: React.CSSProperties = {
-    left:            props.coordinates.x * TILE_SIZE + 'px',
-    top:             props.coordinates.y * TILE_SIZE + 'px',
-    width:           TILE_SIZE + 'px',
-    height:          TILE_SIZE + 'px',
+    left:            props.position.x * props.size + 'px',
+    top:             props.position.y * props.size + 'px',
+    width:           props.size + 'px',
+    height:          props.size + 'px',
     backgroundColor: tileStateColorMap(state),
   }
 
   useEffect(() => {
     setTilesStateSetters(tilesStateSetters => {
-      tilesStateSetters[props.coordinates.x][props.coordinates.y] = setState
+      tilesStateSetters[props.position.x][props.position.y] = setState
       return tilesStateSetters
     })
   }, [])
 
   useEffect(() => {
     setTilesState(tilesState => {
-      tilesState[props.coordinates.x][props.coordinates.y] = state
+      tilesState[props.position.x][props.position.y] = state
       return tilesState
     })
   }, [state])
@@ -230,13 +267,11 @@ function Tile(props: TileProps) {
 
     if (event.button === 2) {
       if (tool === POINTER_TOOL_STATE) {
-        tilesState.forEach((stateArray, x) => {
-          stateArray.forEach((s, y) => {
-            if (s === END_TILE_STATE) {
-              tilesStateSetters[x][y](DEFAULT_TILE_STATE)
-            }
-          })
-        })
+        const endTilePosition = findTilePosition(tilesState, END_TILE_STATE)
+
+        if (endTilePosition) {
+          tilesStateSetters[endTilePosition.x][endTilePosition.y](DEFAULT_TILE_STATE)
+        }
 
         setState(END_TILE_STATE)
       }
@@ -248,13 +283,11 @@ function Tile(props: TileProps) {
 
     if (event.button === 0) {
       if (tool === POINTER_TOOL_STATE) {
-        tilesState.forEach((stateArray, x) => {
-          stateArray.forEach((s, y) => {
-            if (s === START_TILE_STATE) {
-              tilesStateSetters[x][y](DEFAULT_TILE_STATE)
-            }
-          })
-        })
+        const startTilePosition = findTilePosition(tilesState, START_TILE_STATE)
+
+        if (startTilePosition) {
+          tilesStateSetters[startTilePosition.x][startTilePosition.y](DEFAULT_TILE_STATE)
+        }
 
         setState(START_TILE_STATE)
       } else if (tool === WALL_BRUSH_TOOL_STATE) {
@@ -281,52 +314,30 @@ function Controls() {
   const [algorithm, setAlgorithm] = useState(DEPTH_FIRST_SEARCH_ALGORITHM_STATE)
 
   const handleClick = async () => {
-    let endTile
+    const startTilePosition = findTilePosition(tilesState, START_TILE_STATE)
+    const endTilePosition   = findTilePosition(tilesState, END_TILE_STATE)
 
-    for (let x = 0; x < tilesState.length; x++) {
-      for (let y = 0; y < tilesState[x].length; y++) {
-        if (tilesState[x][y] === END_TILE_STATE) {
-          endTile = { coordinates: { x, y }}
-        }
+    if (startTilePosition && endTilePosition) {
+      switch (algorithm) {
+      case DEPTH_FIRST_SEARCH_ALGORITHM_STATE:
+        return DepthFirstSearch(startTilePosition, endTilePosition, tilesState, tilesStateSetters)
+      case BREATH_FIRST_SEARCH_ALGORITHM_STATE:
+        return BreathFirstSearch(startTilePosition, endTilePosition, tilesState, tilesStateSetters)
+      default:
+        return undefined
       }
     }
+  }
 
-    let startTile
-
-    for (let x = 0; x < tilesState.length; x++) {
-      for (let y = 0; y < tilesState[x].length; y++) {
-        if (tilesState[x][y] === START_TILE_STATE) {
-          startTile = { coordinates: { x, y }}
-        }
-      }
-    }
-
-    const used = []
-    for (let x = 0; x < tilesState.length; x++) {
-      used.push([])
-      for (let y = 0; y < tilesState[x].length; y++) {
-        used[x].push(false)
-      }
-    }
-
-    switch (algorithm) {
-    case DEPTH_FIRST_SEARCH_ALGORITHM_STATE:
-      return DepthFirstSearch(startTile, endTile, tilesState, tilesStateSetters, used)
-    case BREATH_FIRST_SEARCH_ALGORITHM_STATE:
-      return BreathFirstSearch(startTile, endTile, tilesState, tilesStateSetters, used)
-    default:
-      return undefined
-    }
+  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setAlgorithm(algorithmNameStateMap(event.target.value))
   }
 
   return (
     <div className='controls'>
       <div className='simulation-control'>
         <button onClick={handleClick}>Run Simulation</button>
-        <select
-          className='algorithms-dropdown'
-          onChange={event => setAlgorithm(algorithmNameStateMap(event.target.value))}
-        >
+        <select className='algorithms-dropdown' onChange={handleChange}>
           {
             ALGORITHMS.map((algorithm, index) => (
               <option key={index}>{algorithm}</option>
@@ -366,188 +377,184 @@ ReactDOM.render(<App />, document.getElementById('root'))
 
 // ==== ALgorithms ==== //
 
-async function DepthFirstSearch(startTile: TileProps, endTile: TileProps, tileStates: TilesState, tilesStateSetters: TilesStateSetters, used: boolean[][]) {
-  if (startTile.coordinates.x < 0 ||
-      startTile.coordinates.x >= tileStates.length ||
-      startTile.coordinates.y < 0 ||
-      startTile.coordinates.y >= tileStates[0].length ||
-      used[startTile.coordinates.x][startTile.coordinates.y]) {
+async function DepthFirstSearch(
+  startTilePosition: Position,
+  endTilePosition: Position,
+  tileStates: TilesState,
+  tilesStateSetters: TilesStateSetters
+) {
+  const usedTiles = createMatrix(tileStates.length, tileStates[0].length, () => false)
+
+  const leftTilePosition   = {x: startTilePosition.x - 1, y: startTilePosition.y}
+  const bottomTilePosition = {x: startTilePosition.x,     y: startTilePosition.y + 1}
+  const rightTilePosition  = {x: startTilePosition.x + 1, y: startTilePosition.y}
+  const topTilePosition    = {x: startTilePosition.x,     y: startTilePosition.y - 1}
+
+  usedTiles[startTilePosition.x][startTilePosition.y] = true
+
+  return (
+    await RecursiveDepthFirstSearch(leftTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)   ||
+    await RecursiveDepthFirstSearch(bottomTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles) ||
+    await RecursiveDepthFirstSearch(rightTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)  ||
+    await RecursiveDepthFirstSearch(topTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  )
+}
+
+async function RecursiveDepthFirstSearch(
+  startTilePosition: Position,
+  endTilePosition: Position,
+  tileStates: TilesState,
+  tilesStateSetters: TilesStateSetters,
+  usedTiles: boolean[][],
+) {
+  if (
+    startTilePosition.x < 0 ||
+    startTilePosition.x >= tileStates.length ||
+    startTilePosition.y < 0 ||
+    startTilePosition.y >= tileStates[0].length ||
+    usedTiles[startTilePosition.x][startTilePosition.y] ||
+    tileStates[startTilePosition.x][startTilePosition.y] === WALL_TILE_STATE
+  ) {
     return false
   }
 
-  if (tileStates[startTile.coordinates.x][startTile.coordinates.y] === WALL_TILE_STATE) {
-    return false
-  }
-
-  if (startTile.coordinates.x === endTile.coordinates.x && startTile.coordinates.y === endTile.coordinates.y) {
+  if (startTilePosition.x === endTilePosition.x && startTilePosition.y === endTilePosition.y) {
     return true
   }
 
+  usedTiles[startTilePosition.x][startTilePosition.y] = true
+  tilesStateSetters[startTilePosition.x][startTilePosition.y](SEARCH_TILE_STATE)
 
-  const newUsed = used
-  newUsed[startTile.coordinates.x][startTile.coordinates.y] = true
-  tilesStateSetters[startTile.coordinates.x][startTile.coordinates.y](SEARCH_TILE_STATE)
+  const leftTilePosition   = {x: startTilePosition.x - 1, y: startTilePosition.y}
+  const bottomTilePosition = {x: startTilePosition.x,     y: startTilePosition.y + 1}
+  const rightTilePosition  = {x: startTilePosition.x + 1, y: startTilePosition.y}
+  const topTilePosition    = {x: startTilePosition.x,     y: startTilePosition.y - 1}
 
-  await new Promise(resolve => setTimeout(resolve, 1))
+  const leftSearch   = RecursiveDepthFirstSearch(leftTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  const bottomSearch = RecursiveDepthFirstSearch(bottomTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  const rightSearch  = RecursiveDepthFirstSearch(rightTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
+  const topSearch    = RecursiveDepthFirstSearch(topTilePosition, endTilePosition, tileStates, tilesStateSetters, usedTiles)
 
-  if (await DepthFirstSearch(
-    {
-      coordinates: {
-        x: startTile.coordinates.x - 1,
-        y: startTile.coordinates.y,
-      }
-    },
-    endTile,
-    tileStates,
-    tilesStateSetters,
-    newUsed
-  )) {
+  if (
+    await leftSearch   ||
+    await bottomSearch ||
+    await rightSearch  ||
+    await topSearch
+  ) {
+    tilesStateSetters[startTilePosition.x][startTilePosition.y](START_TILE_STATE)
     return true
   }
 
-  if (await DepthFirstSearch(
-    {
-      coordinates: {
-        x: startTile.coordinates.x + 1,
-        y: startTile.coordinates.y,
-      }
-    },
-    endTile,
-    tileStates,
-    tilesStateSetters,
-    newUsed
-  )) {
-    return true
-  }
-
-  if (await DepthFirstSearch(
-    {
-      coordinates: {
-        x: startTile.coordinates.x,
-        y: startTile.coordinates.y - 1,
-      }
-    },
-    endTile,
-    tileStates,
-    tilesStateSetters,
-    newUsed
-  )) {
-    return true
-  }
-
-  if (await DepthFirstSearch(
-    {
-      coordinates: {
-        x: startTile.coordinates.x,
-        y: startTile.coordinates.y + 1,
-      }
-    },
-    endTile,
-    tileStates,
-    tilesStateSetters,
-    newUsed
-  )) {
-    return true
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 1))
-
-  tilesStateSetters[startTile.coordinates.x][startTile.coordinates.y](DEFAULT_TILE_STATE)
+  tilesStateSetters[startTilePosition.x][startTilePosition.y](DEFAULT_TILE_STATE)
   return false
 }
 
-async function BreathFirstSearch(startTile: TileProps, endTile: TileProps, tileStates: TilesState, tilesStateSetters: TilesStateSetters, used: boolean[][]) {
+async function BreathFirstSearch(startTile: Position, endTile: Position, tileStates: TilesState, tilesStateSetters: TilesStateSetters) {
   const queue = [startTile]
+  const used = createMatrix(tileStates.length, tileStates[0].length, () => false)
 
   while (queue.length > 0) {
     const front = queue.shift()
 
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    if (front.coordinates.x - 1 >= 0) {
+    if (front.x - 1 >= 0) {
       const tile = {
-        coordinates: {
-          x: front.coordinates.x - 1,
-          y: front.coordinates.y,
-        }
+        x: front.x - 1,
+        y: front.y,
       }
 
-      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
-        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+      if (!used[tile.x][tile.y] && tileStates[tile.x][tile.y] !== WALL_TILE_STATE) {
+        if (tile.x === endTile.x && tile.y === endTile.y) {
           return true
         }
 
-        used[tile.coordinates.x][tile.coordinates.y] = true
+        used[tile.x][tile.y] = true
 
         queue.push(tile)
 
-        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+        tilesStateSetters[tile.x][tile.y](SEARCH_TILE_STATE)
       }
     }
 
-    if (front.coordinates.x + 1 < tileStates.length) {
+    if (front.x + 1 < tileStates.length) {
       const tile = {
-        coordinates: {
-          x: front.coordinates.x + 1,
-          y: front.coordinates.y,
-        }
+        x: front.x + 1,
+        y: front.y,
       }
 
-      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
-        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+      if (!used[tile.x][tile.y] && tileStates[tile.x][tile.y] !== WALL_TILE_STATE) {
+        if (tile.x === endTile.x && tile.y === endTile.y) {
           return true
         }
 
-        used[tile.coordinates.x][tile.coordinates.y] = true
+        used[tile.x][tile.y] = true
 
         queue.push(tile)
 
-        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+        tilesStateSetters[tile.x][tile.y](SEARCH_TILE_STATE)
       }
     }
 
-    if (front.coordinates.y - 1 >= 0) {
+    if (front.y - 1 >= 0) {
       const tile = {
-        coordinates: {
-          x: front.coordinates.x,
-          y: front.coordinates.y - 1,
-        }
+        x: front.x,
+        y: front.y - 1,
       }
 
-      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
-        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+      if (!used[tile.x][tile.y] && tileStates[tile.x][tile.y] !== WALL_TILE_STATE) {
+        if (tile.x === endTile.x && tile.y === endTile.y) {
           return true
         }
 
-        used[tile.coordinates.x][tile.coordinates.y] = true
+        used[tile.x][tile.y] = true
 
         queue.push(tile)
 
-        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+        tilesStateSetters[tile.x][tile.y](SEARCH_TILE_STATE)
       }
     }
 
-    if (front.coordinates.y + 1 < tileStates[0].length) {
+    if (front.y + 1 < tileStates[0].length) {
       const tile = {
-        coordinates: {
-          x: front.coordinates.x,
-          y: front.coordinates.y + 1,
-        }
+        x: front.x,
+        y: front.y + 1,
       }
 
-      if (!used[tile.coordinates.x][tile.coordinates.y] && tileStates[tile.coordinates.x][tile.coordinates.y] !== WALL_TILE_STATE) {
-        if (tile.coordinates.x === endTile.coordinates.x && tile.coordinates.y === endTile.coordinates.y) {
+      if (!used[tile.x][tile.y] && tileStates[tile.x][tile.y] !== WALL_TILE_STATE) {
+        if (tile.x === endTile.x && tile.y === endTile.y) {
           return true
         }
 
-        used[tile.coordinates.x][tile.coordinates.y] = true
+        used[tile.x][tile.y] = true
 
         queue.push(tile)
 
-        tilesStateSetters[tile.coordinates.x][tile.coordinates.y](SEARCH_TILE_STATE)
+        tilesStateSetters[tile.x][tile.y](SEARCH_TILE_STATE)
       }
     }
   }
 
   return false
+}
+
+// ==== Utils ==== //
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createMatrix(width: number, height: number, fill?: (x: number, y: number) => any) {
+  return new Array(width).fill(0).map((_, x) => (
+    new Array(height).fill(0).map((_, y) => (
+      fill ? fill(x, y) : undefined
+    ))
+  ))
+}
+
+function findTilePosition(tilesState: TilesState, tileStateType: number): Position {
+  for (let x = 0; x < tilesState.length; x++) {
+    for (let y = 0; y < tilesState[0].length; y++) {
+      if (tilesState[x][y] === tileStateType) {
+        return {x, y}
+      }
+    }
+  }
 }
