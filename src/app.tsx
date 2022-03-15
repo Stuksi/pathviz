@@ -2,7 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom'
 import './app.css'
 
-import _, { max } from 'lodash'
+import _ from 'lodash'
+import { MinPriorityQueue, PriorityQueueItem } from '@datastructures-js/priority-queue'
 
 import DefaultPointerIcon from './assets/default-pointer-icon.png'
 import EraserPointerIcon  from './assets/eraser-pointer-icon.png'
@@ -59,14 +60,14 @@ const DEFAULT_APP_CONTEXT = {
   setTilesStateSetters: () => undefined,
 }
 
-const DEFAULT_PATH_FINDING_WAIT_TIME = 100
+const DEFAULT_PATH_FINDING_WAIT_TIME  = 100
 const MIN_PATH_FINDING_WAIT_TIME      = 4
 const MAX_PATH_FINDING_WAIT_TIME      = 250
 const PATH_FINDING_WAIT_TIME_STEP     = 15
 
 const RESIZE_DEBOUCE = 50
 
-const PATH_MOVES = [
+const PATH_FINDING_DIRECTIONS = [
   [-1,  0],
   [ 0,  1],
   [ 1,  0],
@@ -358,8 +359,6 @@ function Controls() {
         reset()
         setIsSimulating(true)
 
-        console.log(await AStar(startTilePosition, endTilePosition, tilesState, tilesStateSetters))
-
         switch (algorithm) {
         case DEPTH_FIRST_SEARCH_ALGORITHM_STATE:
           return DepthFirstSearch(startTilePosition, endTilePosition, tilesState, tilesStateSetters)
@@ -410,32 +409,44 @@ function Controls() {
 
   return (
     <div className='controls'>
-      <div className='simulation-control'>
-        <button onClick={simulate}>Run Simulation</button>
+      <div className='simulation-controls'>
+        <div className='simulation-control-buttons'>
+          <button className='simulation-runner' onClick={simulate}>Run Simulation</button>
+          <button className='simulation-reset' onClick={reset}>Reset</button>
+        </div>
+        <div className='simulation-control-sliders'>
+          <div className='slider-wrapper'>
+            <label className='tile-size-label'>Tile Size</label>
+            <input
+              className='tile-size-slider'
+              type='range'
+              min={MIN_TILE_SIZE}
+              max={MAX_TILE_SIZE}
+              step={TILE_SIZE_STEP}
+              value={tileSize}
+              onChange={handleSizeChange}
+            />
+          </div>
+          <div className='slider-wrapper'>
+            <label className='tile-size-label'>Simulation Wait Time</label>
+            <input
+              className='simulation-speed-slider'
+              type='range'
+              min={MIN_PATH_FINDING_WAIT_TIME}
+              max={MAX_PATH_FINDING_WAIT_TIME}
+              step={PATH_FINDING_WAIT_TIME_STEP}
+              value={pathFindingWaitTime}
+              onChange={handleWaitTimeChange}
+            />
+          </div>
+        </div>
         <select className='algorithms-dropdown' onChange={handleAlgorithmChange}>
           {
             ALGORITHMS.map((algorithm, index) => (
-              <option key={index}>{algorithm}</option>
+              <option className='algorithm-option' key={index}>{algorithm}</option>
             ))
           }
         </select>
-        <button onClick={reset}>Reset</button>
-        <input
-          type='range'
-          min={MIN_TILE_SIZE}
-          max={MAX_TILE_SIZE}
-          step={TILE_SIZE_STEP}
-          value={tileSize}
-          onChange={handleSizeChange}
-        />
-        <input
-          type='range'
-          min={MIN_PATH_FINDING_WAIT_TIME}
-          max={MAX_PATH_FINDING_WAIT_TIME}
-          step={PATH_FINDING_WAIT_TIME_STEP}
-          value={pathFindingWaitTime}
-          onChange={handleWaitTimeChange}
-        />
       </div>
       <div className='tools'>
         <ToolIcon src={DefaultPointerIcon} tool={POINTER_TOOL_STATE} />
@@ -480,8 +491,8 @@ async function DepthFirstSearch(
 
   usedTiles[startTilePosition.x][startTilePosition.y] = true
 
-  for (const [xOffset, yOffset] of PATH_MOVES) {
-    const tilePosition = {x: startTilePosition.x + xOffset, y: startTilePosition.y + yOffset}
+  for (const [x, y] of PATH_FINDING_DIRECTIONS) {
+    const tilePosition = {x: startTilePosition.x + x, y: startTilePosition.y + y}
     const search = await RecursiveDepthFirstSearch(tilePosition, endTilePosition, tilesState, tilesStateSetters, usedTiles)
 
     if (search) {
@@ -515,11 +526,10 @@ async function RecursiveDepthFirstSearch(
 
   usedTiles[startTilePosition.x][startTilePosition.y] = true
   tilesStateSetters[startTilePosition.x][startTilePosition.y](SEARCH_TILE_STATE)
-
   await wait(window.PATH_FINDING_WAIT_TIME)
 
-  for (const [xOffset, yOffset] of PATH_MOVES) {
-    const tilePosition = {x: startTilePosition.x + xOffset, y: startTilePosition.y + yOffset}
+  for (const [x, y] of PATH_FINDING_DIRECTIONS) {
+    const tilePosition = {x: startTilePosition.x + x, y: startTilePosition.y + y}
     const search = await RecursiveDepthFirstSearch(tilePosition, endTilePosition, tilesState, tilesStateSetters, usedTiles)
 
     if (search) {
@@ -545,14 +555,15 @@ async function BreathFirstSearch(
 
   usedTiles[startTilePosition.x][startTilePosition.y] = true
 
-  for (const [xOffset, yOffset] of PATH_MOVES) {
-    const tilePosition = {x: startTilePosition.x + xOffset, y: startTilePosition.y + yOffset}
+  for (const [x, y] of PATH_FINDING_DIRECTIONS) {
+    const tilePosition = {x: startTilePosition.x + x, y: startTilePosition.y + y}
 
     if (
-      tilePosition.x >= 0                &&
-      tilePosition.x < tilesState.length &&
-      tilePosition.y >= 0                &&
-      tilePosition.y < tilesState[0].length
+      tilePosition.x >= 0                   &&
+      tilePosition.x < tilesState.length    &&
+      tilePosition.y >= 0                   &&
+      tilePosition.y < tilesState[0].length &&
+      tilesState[startTilePosition.x][startTilePosition.y] !== WALL_TILE_STATE
     ) {
       usedTiles[tilePosition.x][tilePosition.y] = true
       pathsQueue.push([tilePosition])
@@ -564,14 +575,16 @@ async function BreathFirstSearch(
     const path = pathsQueue.shift()
     const lastTilePosition = _.last(path)
 
-    for (const [xOffset, yOffset] of PATH_MOVES) {
-      const tilePosition = {x: lastTilePosition.x + xOffset, y: lastTilePosition.y + yOffset}
+    for (const [x, y] of PATH_FINDING_DIRECTIONS) {
+      const tilePosition = {x: lastTilePosition.x + x, y: lastTilePosition.y + y}
 
       if (
-        tilePosition.x >= 0                &&
-        tilePosition.x < tilesState.length &&
-        tilePosition.y >= 0                &&
-        tilePosition.y < tilesState[0].length
+        tilePosition.x >= 0                        &&
+        tilePosition.x < tilesState.length         &&
+        tilePosition.y >= 0                        &&
+        tilePosition.y < tilesState[0].length      &&
+        !usedTiles[tilePosition.x][tilePosition.y] &&
+        tilesState[tilePosition.x][tilePosition.y] !== WALL_TILE_STATE
       ) {
         if (tilePosition.x === endTilePosition.x && tilePosition.y === endTilePosition.y) {
           _.reverse(path).forEach(tilePosition => {
@@ -581,14 +594,9 @@ async function BreathFirstSearch(
           return true
         }
 
-        if (
-          !usedTiles[tilePosition.x][tilePosition.y] &&
-          tilesState[tilePosition.x][tilePosition.y] !== WALL_TILE_STATE
-        ) {
-          usedTiles[tilePosition.x][tilePosition.y] = true
-          pathsQueue.push(path.concat([tilePosition]))
-          tilesStateSetters[tilePosition.x][tilePosition.y](SEARCH_TILE_STATE)
-        }
+        usedTiles[tilePosition.x][tilePosition.y] = true
+        pathsQueue.push(path.concat([tilePosition]))
+        tilesStateSetters[tilePosition.x][tilePosition.y](SEARCH_TILE_STATE)
       }
     }
 
@@ -601,70 +609,78 @@ async function BreathFirstSearch(
 async function AStar(
   startTilePosition: Position,
   endTilePosition: Position,
-  tileStates: TilesState,
+  tilesState: TilesState,
   tilesStateSetters: TilesStateSetters,
 ) {
-  function h(tilePosition: Position) {
+  function heuristic(tilePosition: Position) {
     return Math.abs(tilePosition.x - endTilePosition.x) + Math.abs(tilePosition.y - endTilePosition.y)
   }
 
-  function d(t1: Position, t2: Position) {
-    return Math.sqrt(Math.pow(Math.abs(t1.x - t2.x), 2) + Math.pow(Math.abs(t1.y - t2.y), 2))
+  function distance(tilePositionA: Position, tilePositionB: Position) {
+    return Math.sqrt(Math.pow(Math.abs(tilePositionA.x - tilePositionB.x), 2) + Math.pow(Math.abs(tilePositionA.y - tilePositionB.y), 2))
   }
 
-  let openSet  = []
-  const cameFrom = []
-  const gScore   = createMatrix(tileStates.length, tileStates[0].length, () => Infinity)
-  const fScore   = createMatrix(tileStates.length, tileStates[0].length, () => Infinity)
+  const gScore   = new Map()
+  const fScore   = new Map()
+  const cameFrom = new Map()
+  const openSet  = new MinPriorityQueue<Position>({
+    priority: (tilePosition) => fScore.get(tilePosition) || Infinity
+  })
 
-  openSet.push(startTilePosition)
-  gScore[startTilePosition.x][startTilePosition.y] = 0
-  fScore[startTilePosition.x][startTilePosition.y] = h(startTilePosition)
+  openSet.enqueue(startTilePosition)
+  gScore.set(startTilePosition, 0)
+  fScore.set(startTilePosition, heuristic(startTilePosition))
 
-  while (openSet.length > 0) {
-    const smallest = _.min(_.map(fScore, (el) => _.min(el)))
-    let closestTilePosition
-    for (let x = 0; x < fScore.length; x++) {
-      for (let y = 0; y < fScore[0].length; y++) {
-        if (fScore[x][y] === smallest) {
-          closestTilePosition = {x, y}
-        }
-      }
+  while (!openSet.isEmpty()) {
+    const { element: current } = openSet.dequeue() as PriorityQueueItem<Position>
+
+    if (
+      (current.x !== startTilePosition.x || current.y !== startTilePosition.y) &&
+      (current.x !== endTilePosition.x   || current.y !== endTilePosition.y)
+    ) {
+      tilesStateSetters[current.x][current.y](SEARCH_TILE_STATE)
+      await wait(window.PATH_FINDING_WAIT_TIME)
     }
 
-    if (closestTilePosition.x === endTilePosition.x && closestTilePosition.y == endTilePosition.y) {
+    if (current.x === endTilePosition.x && current.y === endTilePosition.y) {
+      let currentTile = current
+      const path = [current]
+
+      while (cameFrom.has(currentTile)) {
+        currentTile = cameFrom.get(currentTile)
+        path.push(currentTile)
+      }
+
+      path.pop()
+      path.shift()
+
+      _.reverse(path).forEach(tilePosition => {
+        tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+      })
+
       return true
     }
 
-    tilesStateSetters[closestTilePosition.x][closestTilePosition.y](SEARCH_TILE_STATE)
+    for (const [x, y] of PATH_FINDING_DIRECTIONS) {
+      const tilePosition = {x: current.x + x, y: current.y + y}
 
-    let index = -1
-    for (let i = 0; i < openSet.length; i++) {
-      if (openSet[i].x === closestTilePosition.x && openSet[i].y === closestTilePosition.y) {
-        index = i
-        break
-      }
-    }
+      if (
+        tilePosition.x >= 0                        &&
+        tilePosition.x < tilesState.length         &&
+        tilePosition.y >= 0                        &&
+        tilePosition.y < tilesState[0].length      &&
+        tilesState[tilePosition.x][tilePosition.y] !== WALL_TILE_STATE
+      ) {
+        const tilePositionGScore = gScore.get(current) + distance(current, tilePosition)
 
-    openSet = openSet.slice(index, 1)
+        if (tilePositionGScore < (gScore.get(tilePosition) || Infinity)) {
+          cameFrom.set(tilePosition, current)
+          gScore.set(tilePosition, tilePositionGScore)
+          fScore.set(tilePosition, tilePositionGScore + heuristic(tilePosition))
 
-    for (const [xOffset, yOffset] of PATH_MOVES) {
-      const neighbourTilePosition = {x: closestTilePosition.x + xOffset, y: closestTilePosition.y + yOffset}
-      const tgScore = gScore[closestTilePosition.x][closestTilePosition.y] + d(closestTilePosition, neighbourTilePosition)
-
-      if (tgScore < gScore[neighbourTilePosition.x][neighbourTilePosition.y]) {
-        gScore[neighbourTilePosition.x][neighbourTilePosition.y] = tgScore
-        fScore[neighbourTilePosition.x][neighbourTilePosition.y] = tgScore + h(neighbourTilePosition)
-
-        let index2 = -1
-        for (let i = 0; i < openSet.length; i++) {
-          if (openSet[i].x === neighbourTilePosition.x && openSet[i].y === neighbourTilePosition.y) {
-            index2 = i
-            break
+          if (openSet.toArray().filter((searchTilePosition: Position) => tilePosition.x === searchTilePosition.x && tilePosition.y === searchTilePosition.y).length === 0) {
+            openSet.enqueue(tilePosition)
           }
-        }
-        if (index2 === -1) {
-          openSet.push(neighbourTilePosition)
         }
       }
     }
@@ -675,7 +691,6 @@ async function AStar(
 
 // ==== Utils ==== //
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function createMatrix<T>(width: number, height: number, fill?: (x: number, y: number) => T) {
   return new Array(width).fill(0).map((_, x) => (
     new Array(height).fill(0).map((_, y) => (
@@ -697,4 +712,3 @@ function findTilePosition(tilesState: TilesState, tileStateType: number): Positi
 function wait(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds))
 }
-

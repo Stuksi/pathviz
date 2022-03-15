@@ -10,12 +10,13 @@
   "author": "Stoyan Grozdanov <stoyan.konstantinov.grozdanov@gmail.com>",
   "license": "ISC",
   "dependencies": {
-    "@types/lodash": "^4.14.179",
+    "@datastructures-js/priority-queue": "^5.3.0",
     "lodash": "^4.17.21",
     "react": "^17.0.2",
     "react-dom": "^17.0.2"
   },
   "devDependencies": {
+    "@types/lodash": "^4.14.180",
     "@types/react": "^17.0.39",
     "@types/react-dom": "^17.0.13",
     "@typescript-eslint/eslint-plugin": "^5.13.0",
