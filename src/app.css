@@ -100,3 +100,12 @@ select {
   font: inherit;
   font-size: 1.5rem;
 }
+
+.diagonals-check-wrapper {
+  display: flex;
+  gap: 1rem;
+}
+
+.simulation-diagonals-check {
+  transform: scale(2);
+}
