@@ -14,9 +14,9 @@ import EraserCursor       from './assets/eraser-cursor.png'
 // ==== Constants ==== //
 
 const DEFAULT_TILE_SIZE = 100
-const MIN_TILE_SIZE = 20
-const MAX_TILE_SIZE = 200
-const TILE_SIZE_STEP = 10
+const MIN_TILE_SIZE     = 20
+const MAX_TILE_SIZE     = 200
+const TILE_SIZE_STEP    = 10
 
 const SELECTED_TOOL_COLOR = '#fdfeff'
 const DEFAULT_TILE_COLOR  = '#f8f9fc'
@@ -151,7 +151,6 @@ interface Position {
   x: number
   y: number
 }
-
 
 interface TileProps {
   position: Position
@@ -518,7 +517,7 @@ function ToolIcon({ src, tool: toolState }: ToolIconProps) {
 
 ReactDOM.render(<App />, document.getElementById('root'))
 
-// ==== Algorithms ==== //
+// ==== Pathfinding Algorithms ==== //
 
 async function DepthFirstSearch(
   startTilePosition: Position,
@@ -732,15 +731,84 @@ async function AStar(
   return false
 }
 
-function Dijkstra(
+async function Dijkstra(
   startTilePosition: Position,
   endTilePosition: Position,
   tilesState: TilesState,
   tilesStateSetters: TilesStateSetters,
 ) {
-  console.log('TO DO')
+  const distances = createMatrix(tilesState.length, tilesState[0].length, () => Infinity)
+  const cameFrom  = createMatrix(tilesState.length, tilesState[0].length, () => undefined)
+  const usedTiles = createMatrix(tilesState.length, tilesState[0].length, () => false)
+  const openSet   = new MinPriorityQueue<Position>({
+    priority: (tilePosition) => distances[tilePosition.x][tilePosition.y]
+  })
+
+  distances[startTilePosition.x][startTilePosition.y] = 0
+  usedTiles[startTilePosition.x][startTilePosition.y] = true
+  openSet.enqueue(startTilePosition)
+
+  while (!openSet.isEmpty()) {
+    const { element: currentTilePosition } = openSet.dequeue() as PriorityQueueItem<Position>
+
+    if (
+      (currentTilePosition.x !== startTilePosition.x || currentTilePosition.y !== startTilePosition.y) &&
+      (currentTilePosition.x !== endTilePosition.x   || currentTilePosition.y !== endTilePosition.y)
+    ) {
+      tilesStateSetters[currentTilePosition.x][currentTilePosition.y](SEARCH_TILE_STATE)
+      await wait(window.PATH_FINDING_WAIT_TIME)
+    }
+
+    usedTiles[currentTilePosition.x][currentTilePosition.y] = true
+
+    for (const [x, y] of window.PATH_FINDING_DIRECTIONS) {
+      const tilePosition = {x: currentTilePosition.x + x, y: currentTilePosition.y + y}
+
+      if (
+        tilePosition.x >= 0                        &&
+        tilePosition.x < tilesState.length         &&
+        tilePosition.y >= 0                        &&
+        tilePosition.y < tilesState[0].length      &&
+        !usedTiles[tilePosition.x][tilePosition.y] &&
+        tilesState[tilePosition.x][tilePosition.y] !== WALL_TILE_STATE
+      ) {
+        const distance = distances[currentTilePosition.x][currentTilePosition.y] + 1
+
+        if (distance < distances[tilePosition.x][tilePosition.y]) {
+          distances[tilePosition.x][tilePosition.y] = distance
+          cameFrom[tilePosition.x][tilePosition.y] = currentTilePosition
+
+          if (openSet.toArray().filter(({ element: searchTilePosition }: PriorityQueueItem<Position>) => tilePosition.x === searchTilePosition.x && tilePosition.y === searchTilePosition.y).length === 0) {
+            openSet.enqueue(tilePosition)
+          }
+        }
+      }
+    }
+  }
+
+  let selectedTilePosition = endTilePosition
+  const path = [endTilePosition]
+
+  while (cameFrom[selectedTilePosition.x][selectedTilePosition.y] !== undefined) {
+    selectedTilePosition = cameFrom[selectedTilePosition.x][selectedTilePosition.y]
+    path.push(selectedTilePosition)
+  }
+
+  if (_.last(path).x === startTilePosition.x && _.last(path).y === startTilePosition.y) {
+    path.pop()
+    path.shift()
+
+    _.reverse(path).forEach(tilePosition => {
+      tilesStateSetters[tilePosition.x][tilePosition.y](PATH_TILE_STATE)
+    })
+
+    return true
+  }
+
   return false
 }
+
+// ==== Maze Generation Algorithms ==== //
 
 // ==== Utils ==== //
 
